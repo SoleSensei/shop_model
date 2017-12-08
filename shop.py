@@ -1,14 +1,15 @@
 import random
 import simpy
 import locale
+from termcolor import cprint
 
-AVG_ENTER_TIME = 3*60 # A customer enters every ~3 minutes
+AVG_ENTER_TIME = 10*60 # A customer enters every ~10 minutes
 AVG_BUYS_NUBMER = 10 # A customer buys ~10 goods
 SHOP_WORK_TIME = 5*60*60 # The shop works 200 minutes
-NUM_TERMINAL = 1 # Number of pay terminals in the shop
+NUM_TERMINAL = 2 # Number of pay terminals in the shop
 
 # D_enter
-def enter_time(): # customer entering every 'D_enter' minutes
+def enter_time(): # customer entering every 'D_enter' seconds
     return random.randint(AVG_ENTER_TIME - 60, AVG_ENTER_TIME + 60)
 
 # D_num
@@ -16,18 +17,18 @@ def buys_num(): # customer buying 'D_num' goods
     return random.randint(AVG_BUYS_NUBMER - 7, AVG_BUYS_NUBMER + 7)
 
 # D_time
-def buy_time(buys): # customer spending 'D_time' minutes buying all stuff
+def buy_time(buys): # customer spending 'D_time' seconds buying all stuff
     time_per_one_buy = random.uniform(0.5, 2.5) * 60
     return int(buys * time_per_one_buy)
 
 # D_pay
-def pay_time(buys): # cashier spending 'D_pay' minutes on each customer
-    time_per_one_buy = random.uniform(2, 5) 
-    return int(buys * time_per_one_buy)
+def pay_time(): # cashier spending 'D_pay' seconds on one buy
+    time_per_one_buy = random.randint(1, 5) 
+    return time_per_one_buy
 
 # Get current time hh::mm::ss
 def format_time(stime):
-    return str(stime) # just 4 test
+    # return str(stime) # just 4 test
     if (stime == 0):
         return "00:00:00"
     hours = int(stime / 3600) % 24
@@ -44,14 +45,35 @@ def format_time(stime):
 
 # The shop
 class Shop(object):
-    def __init__(self, env, terminals):
+    def __init__(self, env, num_terminals):
         self.env = env
-        self.terminal = simpy.Resource(env, capacity=terminals) # shared resource
-    def service(self, customer): # servicing client at cashbox
-        print('%s paying his buys %s.' % (customer.name, format_time(self.env.now)))
-        yield self.env.timeout( pay_time(customer.buys) )   
-        print('%s payed his buys %s.' % (customer.name, format_time(self.env.now)))
-
+        self.num_terminals = num_terminals
+        self.terminals = [] # = cashboxes
+        self.queue = [] # queue length at terminal
+        self.cashier_speed = [] # cashier time per one buy
+        for i in range(num_terminals): 
+            self.terminals.append(simpy.Resource(env, capacity=1)) # only one customer can servicing at one time 
+            self.queue.append(0) # no queues at the start 
+            self.cashier_speed.append(pay_time())
+     
+    def service(self, name, i, buys): # servicing client at cashbox
+        print('%s paying his buys %s.' % (name, format_time(self.env.now)))
+        service_time = self.cashier_speed[i]*buys
+        yield self.env.timeout( service_time )   
+        self.queue[i] -= 1
+        print('%s payed his buys %s.' % (name, format_time(self.env.now)))
+    
+    def choose_cashbox(self, name): # customer looking for cashbox with the smallest queue
+        min_quene = self.queue[0]
+        min_index = 0
+        for i in range(self.num_terminals):
+            if (self.queue[i] < min_quene):
+                min_quene = self.queue[i]
+                min_index = i
+        self.queue[min_index] += 1
+        print('%s goes to terminal %d at %s.' % (name, min_index, format_time(self.env.now)))
+        return min_index
+        
 
 # Customer shopping
 class Customer(object):
@@ -62,18 +84,19 @@ class Customer(object):
         self.buys = buys_num() # number of goods that customer needs
     def shopping(self):
         print('%s enters shop at %s.' % (self.name, format_time(self.env.now)))
-           
             # Customer doing buys
         yield self.env.timeout( buy_time(self.buys) )
         print ('%s finishes shopping at %s.' % (self.name, format_time(self.env.now)))
-           
+
             # Customer goes to pay terminals
         yield self.env.timeout(10) # ~10 seconds to go
+            # Customer goes to terminal with the smalles queue
+        choosen = self.shop.choose_cashbox(self.name)
 
-            # Customer waits if all terminals are busy
-        with self.shop.terminal.request() as request:
+            # Customer waits if terminal is busy
+        with self.shop.terminals[choosen].request() as request:
             yield request
-            yield self.env.process(self.shop.service(self))
+            yield self.env.process(self.shop.service(self.name, choosen, self.buys))
             print ('%s exit the shop at %s.' % (self.name, format_time(self.env.now)))
             
 
@@ -94,7 +117,7 @@ def simmulate(env):
     
 
 def main(): 
-    print ('Shop simulation starts:')
+    cprint ('Shop simulation starts:', 'green')
     random.seed(42)
     
     # Setup process
@@ -104,8 +127,8 @@ def main():
     # Execute
     env.run(until=SHOP_WORK_TIME)
     
-    print ('Shop closes at %.2f.' % env.now)
-    print ('Shop simulation stopped.')
+    print ('Shop closes at %s.' % format_time(env.now))
+    cprint ('Shop simulation stopped.', 'red')
 
 
 if __name__ == "__main__":
