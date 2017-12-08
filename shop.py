@@ -5,7 +5,9 @@ from termcolor import cprint
 
 AVG_ENTER_TIME = 10*60 # A customer enters every ~10 minutes
 AVG_BUYS_NUBMER = 10 # A customer buys ~10 goods
-SHOP_WORK_TIME = 5*60*60 # The shop works 200 minutes
+SHOP_OPEN_TIME = 6*3600 # Shop opens at 6:00AM 
+SHOP_CLOSE_TIME = 23*3600 # Shop closes at 11:00PM
+SHOP_WORK_TIME = SHOP_CLOSE_TIME # The shop working time
 NUM_TERMINAL = 2 # Number of pay terminals in the shop
 
 # D_enter
@@ -18,7 +20,7 @@ def buys_num(): # customer buying 'D_num' goods
 
 # D_time
 def buy_time(buys): # customer spending 'D_time' seconds buying all stuff
-    time_per_one_buy = random.uniform(0.5, 2.5) * 60
+    time_per_one_buy = random.uniform(3, 6) * 60
     return int(buys * time_per_one_buy)
 
 # D_pay
@@ -82,6 +84,7 @@ class Customer(object):
         self.name = name
         self.shop = shop
         self.buys = buys_num() # number of goods that customer needs
+
     def shopping(self):
         print('%s enters shop at %s.' % (self.name, format_time(self.env.now)))
             # Customer doing buys
@@ -103,9 +106,10 @@ class Customer(object):
 # Create shop and cast customers
 def simmulate(env):
     # Shop creating
-    print ('Shop openning at %s.' % format_time(env.now))
     terminals = NUM_TERMINAL    
     shop = Shop(env, terminals)
+    yield env.timeout( SHOP_OPEN_TIME ) # Wait for shop openning
+    print ('Shop openning at %s.' % format_time(env.now))
     
     # Customers entering the shop 
     n = 0
