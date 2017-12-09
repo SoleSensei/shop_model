@@ -3,12 +3,13 @@ import locale
 import simpy
 from termcolor import cprint
 
-AVG_ENTER_TIME = 15 # A customer enters every ~25 seconds
-AVG_BUYS_NUBMER = 10 # A customer buys ~10 goods
+# You can change constants
 SHOP_OPEN_TIME = 6*3600 # Shop opens at 6:00AM
 SHOP_CLOSE_TIME = 23*3600 # Shop closes at 11:00PM
+ANNOUNCE_CLOSE = 20*60 # The shop announces closing 20 minutes before
+AVG_ENTER_TIME = 15 # A customer enters every ~15 seconds
+AVG_BUYS_NUBMER = 10 # A customer buys ~10 goods
 NUM_TERMINAL = 3 # Number of pay terminals in the shop
-ANNOUNCE_CLOSE = 10*60 # The shop announce closing 20 minutes before
 
 # Statistic | Variable globals 
 num_clients = 0 # Number customers in the shop right now
@@ -121,10 +122,10 @@ class Customer(object):
         # Start shopping
         print('%s enters shop at %s.' % (self.name, format_time(self.env.now)))
         num_clients += 1
-        clients.append(num_clients) # Save values for graph
+        clients.append(num_clients) # save values for graph
         timestat_c.append(self.env.now)
             # Customer doing buys
-        goods.append(self.buys)  # Save values for graph
+        goods.append(self.buys)  # save values for graph
         timestat_g.append(self.env.now)
         yield self.env.timeout(self.time_buy)
         print('%s gets %d buys at %s.' % (self.name, self.buys, format_time(self.env.now)))
@@ -139,7 +140,7 @@ class Customer(object):
         with self.shop.terminals[choosen].request() as request:
             yield request
             len_queue -= 1
-            queues.append(len_queue) # Save values for graph
+            queues.append(len_queue) # save values for graph
             timestat_q.append(self.env.now)
             yield self.env.process(self.shop.service(self.name, choosen, self.buys))
             print('%s exit the shop at %s.' % (self.name, format_time(self.env.now)))
@@ -157,13 +158,16 @@ def simmulate(env):
 
     # Customers entering the shop
     num = 0 # customer number
-    while SHOP_CLOSE_TIME - env.now > 60*60: # close enter one hour before closing
+    time_before_close = SHOP_CLOSE_TIME - env.now
+    while time_before_close > 60*60: # close enter one hour before closing
         num += 1
         yield env.timeout(enter_time()) # waiting for next customer enter
         # Creating process for every customer
         customer = Customer(env, 'Customer %d' % num, shop)
         shopping = env.process(customer.shopping())
-    yield env.timeout(SHOP_CLOSE_TIME - ANNOUNCE_CLOSE - env.now)
+        time_before_close = SHOP_CLOSE_TIME - env.now
+    if time_before_close - ANNOUNCE_CLOSE > 0:     
+        yield env.timeout(time_before_close - ANNOUNCE_CLOSE)
     cprint('The shop closing soon! Enter closed.', 'yellow')
 
 def main(): 
@@ -178,6 +182,10 @@ def main():
     env.run(until=SHOP_CLOSE_TIME)
     print('Number of clients inside after shop close: %d. Shop worked %s above the normal' % 
     (num_clients,format_time(additional_time)))
+    clients.append(0)
+    timestat_c.append(env.now+additional_time)
+    queues.append(0)
+    timestat_q.append(env.now+additional_time)
     print('Shop closes at %s.' % format_time(env.now+additional_time))
     cprint('Shop simulation stopped.', 'red')
 
@@ -194,17 +202,17 @@ font = {'family' : 'Normal',
 
 matplotlib.rc('font', **font)
 
-figure()
+figure('Timestat queue')
 plot(timestat_q, queues)
 title('Queue length')
 xlabel(u'Simulation time, sec')
 ylabel(u'Current queue length')
-figure()
+figure('Timestat client')
 plot(timestat_c, clients)
 title(u'Customers number')
 xlabel(u'Simulation time, sec')
 ylabel(u'Current clients number')
-figure()
+figure('Timestat goods')
 plot(timestat_g, goods)
 title('Number of goods')
 xlabel(u'Simulation time, sec')
