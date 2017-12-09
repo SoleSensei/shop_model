@@ -8,6 +8,7 @@ AVG_BUYS_NUBMER = 10 # A customer buys ~10 goods
 SHOP_OPEN_TIME = 6*3600 # Shop opens at 6:00AM
 SHOP_CLOSE_TIME = 23*3600 # Shop closes at 11:00PM
 NUM_TERMINAL = 3 # Number of pay terminals in the shop
+ANNOUNCE_CLOSE = 10*60 # The shop announce closing 20 minutes before
 
 # Statistic | Variable globals 
 num_clients = 0 # Number customers in the shop right now
@@ -16,7 +17,10 @@ timestat_c = [] # Time statistic for clients
 len_queue = 0 # Queue length right now (longest)
 queues = [] # Array of queue lengths
 timestat_q = [] # Time statistic for queues
-  
+goods = [] # Array of goods bought by customers
+timestat_g = [] # Time statistic for goods
+
+additional_time = 0 # Shop works additonal time if there are people inside
 
 # D_enter
 def enter_time(): # customer entering every 'D_enter' seconds
@@ -27,9 +31,9 @@ def buys_num(): # customer buying 'D_num' goods
     return random.randint(AVG_BUYS_NUBMER - 7, AVG_BUYS_NUBMER + 7)
 
 # D_time
-def buy_time(buys): # customer spending 'D_time' seconds buying all stuff
-    time_per_one_buy = random.uniform(3, 6) * 60 # ~3-6 minutes
-    return int(buys * time_per_one_buy)
+def buy_time(): # customer spending 'D_time' seconds buying one buy
+    time_per_one_buy = random.randint(3, 6) * 60 # ~3-6 minutes
+    return time_per_one_buy
 
 # D_pay
 def pay_time(): # cashier spending 'D_pay' seconds on one buy
@@ -68,8 +72,11 @@ class Shop(object):
             self.cashier_speed.append(pay_time())
 
     def service(self, name, i, buys): # servicing client at cashbox
+        global additional_time
         print('%s paying his buys at %s.' % (name, format_time(self.env.now)))
         service_time = self.cashier_speed[i]*buys + self.cashier_speed[i]*4
+        if SHOP_CLOSE_TIME - self.env.now < service_time: 
+            additional_time = int(service_time*len_queue/NUM_TERMINAL)
         yield self.env.timeout(service_time)
         self.queue[i] -= 1
         print('%s payed his buys at %s.' % (name, format_time(self.env.now)))
@@ -93,16 +100,34 @@ class Customer(object):
         self.name = name
         self.shop = shop
         self.buys = buys_num() # number of goods that customer needs
-
+        self.time_per_buy = buy_time() # time spending at one buy
+        self.time_buy = self.buys * self.time_per_buy # time spending at all stuff
     def shopping(self):
-        global clients, timestat_c, len_queue, timestat_q, queues, num_clients
+        global clients, timestat_c, len_queue, timestat_q, queues, num_clients, timestat_g, goods
+        # Check on enough time for buys
+        time_before = SHOP_CLOSE_TIME - ANNOUNCE_CLOSE - self.env.now 
+        if time_before < 0:
+            yield self.env.timeout(SHOP_CLOSE_TIME - self.env.now)
+        if time_before < self.time_per_buy*self.buys:
+            # customer get less goods that he wanted
+            self.time_buy = -1 # cancel shopping if not enough time    
+            for i in range(self.buys-1):
+                if time_before > self.time_per_buy*(self.buys-i):
+                    self.buys = self.buys-i
+                    self.time_buy = self.time_per_buy*self.buys
+                    break
+        if self.time_buy < 0: # interupt if not enough bying time
+            yield self.env.timeout(SHOP_CLOSE_TIME - self.env.now)       
+        # Start shopping
         print('%s enters shop at %s.' % (self.name, format_time(self.env.now)))
         num_clients += 1
         clients.append(num_clients) # Save values for graph
         timestat_c.append(self.env.now)
             # Customer doing buys
-        yield self.env.timeout(buy_time(self.buys))
-        print('%s finishes shopping at %s.' % (self.name, format_time(self.env.now)))
+        goods.append(self.buys)  # Save values for graph
+        timestat_g.append(self.env.now)
+        yield self.env.timeout(self.time_buy)
+        print('%s gets %d buys at %s.' % (self.name, self.buys, format_time(self.env.now)))
 
             # Customer goes to pay terminals
         yield self.env.timeout(10) # ~10 seconds to go
@@ -136,7 +161,10 @@ def simmulate(env):
         num += 1
         yield env.timeout(enter_time()) # waiting for next customer enter
         # Creating process for every customer
-        env.process(Customer(env, 'Customer %d' % num, shop).shopping())
+        customer = Customer(env, 'Customer %d' % num, shop)
+        shopping = env.process(customer.shopping())
+    yield env.timeout(SHOP_CLOSE_TIME - ANNOUNCE_CLOSE - env.now)
+    cprint('The shop closing soon! Enter closed.', 'yellow')
 
 def main(): 
     cprint('Shop simulation starts:', 'green')
@@ -144,12 +172,13 @@ def main():
 
     # Setup process
     env = simpy.Environment()
-    env.process(simmulate(env))
+    inside = env.process(simmulate(env))
 
     # Execute
     env.run(until=SHOP_CLOSE_TIME)
-
-    print('Shop closes at %s.' % format_time(env.now))
+    print('Number of clients inside after shop close: %d. Shop worked %s above the normal' % 
+    (num_clients,format_time(additional_time)))
+    print('Shop closes at %s.' % format_time(env.now+additional_time))
     cprint('Shop simulation stopped.', 'red')
 
 
@@ -166,7 +195,7 @@ font = {'family' : 'Normal',
 matplotlib.rc('font', **font)
 
 figure()
-plot(timestat_q, queues, label='queue_len')
+plot(timestat_q, queues)
 title('Queue length')
 xlabel(u'Simulation time, sec')
 ylabel(u'Current queue length')
@@ -175,4 +204,9 @@ plot(timestat_c, clients)
 title(u'Customers number')
 xlabel(u'Simulation time, sec')
 ylabel(u'Current clients number')
+figure()
+plot(timestat_g, goods)
+title('Number of goods')
+xlabel(u'Simulation time, sec')
+ylabel(u'Current number of buys')
 show()
