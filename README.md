@@ -1,4 +1,4 @@
-# Shop simulation model with SimPy
+# Shop work simulation model with SimPy
 
 ## Launch
 
@@ -32,3 +32,7 @@ SHOP_OPEN_TIME < SHOP_CLOSE_TIME
 ANNOUNCE_CLOSE < SHOP_CLOSE_TIME - SHOP_OPEN_TIME
 ```
 all values positive of course.
+
+```py
+$ python3 shop.py
+```
