@@ -2,17 +2,18 @@ import random
 import locale
 import simpy
 from termcolor import cprint
+from time import sleep
 
 # You can change constants
 SHOP_OPEN_TIME = 6*3600 # Shop opens at 6:00AM
 SHOP_CLOSE_TIME = 23*3600 # Shop closes at 11:00PM
-ANNOUNCE_CLOSE = 20*60 # The shop announces closing 20 minutes before
+ANNOUNCE_CLOSE = 10*60 # The shop announces closing 10 minutes before
 CLOSE_ENTER = 60 # The shop enter closes 60 minutes before shop close
 AVG_ENTER_TIME = 15 # A customer enters every ~15 seconds
 AVG_BUYS_NUBMER = 10 # A customer buys ~10 goods
-NUM_TERMINAL = 4 # Number of pay terminals in the shop
+NUM_TERMINAL = 5 # Number of pay terminals in the shop
 
-DRAW = 1 # Shows graph
+DRAW = True # Shows graph
 
 # Statistic | Variable globals 
 num_clients = 0 # Number customers in the shop right now
@@ -28,6 +29,7 @@ all_queues = [] # Array of all queues in the shop
 timestat_aq = [] # Time statistic for all queues
 
 additional_time = 0 # Shop works additonal time if there are people inside
+slow_flag = False # Simulation speed
 
 # D_enter
 def enter_time(): # customer entering every 'D_enter' seconds
@@ -55,7 +57,7 @@ def format_time(stime):
         return "00:00:00"
     hours = int(stime / 3600) % 24
     minutes = int(stime % 3600 / 60)
-    seconds = stime % 3600 % 60
+    seconds = int(stime % 3600 % 60)
     if hours < 10:
         hours = "0" + str(hours)
     if minutes < 10:
@@ -118,7 +120,7 @@ class Customer(object):
         self.time_per_buy = buy_time() # time spending at one buy
         self.time_buy = self.buys * self.time_per_buy # time spending at all stuff
     def shopping(self):
-        global clients, len_queue, queues, num_clients, goods, len_all_queues
+        global clients, len_queue, queues, num_clients, goods, len_all_queues, slow_flag
         global timestat_c, timestat_g, timestat_q, timestat_aq
         # Check on enough time for buys
         time_before = SHOP_CLOSE_TIME - ANNOUNCE_CLOSE - self.env.now 
@@ -135,7 +137,7 @@ class Customer(object):
         if self.time_buy < 0: # interupt if not enough bying time
             yield self.env.timeout(SHOP_CLOSE_TIME - self.env.now)       
         # Start shopping
-        print('%s enters shop at %s.' % (self.name, format_time(self.env.now)))
+        cprint('%s enters shop at %s.' % (self.name, format_time(self.env.now)), 'green')
         num_clients += 1
         clients.append(num_clients) # save values for graph
         timestat_c.append(self.env.now)
@@ -158,10 +160,12 @@ class Customer(object):
             len_all_queues -= 1
             all_queues.append(len_all_queues) # save values for graph
             timestat_aq.append(self.env.now)
-            print('%s exit the shop at %s.' % (self.name, format_time(self.env.now)))
+            cprint('%s exit the shop at %s.' % (self.name, format_time(self.env.now)),'red')
             num_clients -= 1
             clients.append(num_clients)
             timestat_c.append(self.env.now)
+            if slow_flag:
+                sleep(0.002)
 
 
 # Create shop and cast customers
@@ -169,34 +173,42 @@ def simmulate(env):
     # Shop creating
     shop = Shop(env, NUM_TERMINAL)
     yield env.timeout(SHOP_OPEN_TIME) # Wait for shop openning
-    print('Shop openning at %s.' % format_time(env.now))
-
+    cprint('Shop openning at %s.' % format_time(env.now),'yellow')
+    sleep(1)
     # Customers entering the shop
     num = 0 # customer number
     time_before_close = SHOP_CLOSE_TIME - env.now
     while time_before_close > CLOSE_ENTER*60: # close enter one hour before closing
         num += 1
+        if env.now - SHOP_OPEN_TIME < 5*60:
+            sleep(0.1)
         yield env.timeout(enter_time()) # waiting for next customer enter
         # Creating process for every customer
         customer = Customer(env, 'Customer %d' % num, shop)
         shopping = env.process(customer.shopping())
         time_before_close = SHOP_CLOSE_TIME - env.now
+
+    cprint('\nThe shop enter closed!\n', 'yellow')
+    sleep(2)
+    global slow_flag
+    slow_flag =  True
     if time_before_close - ANNOUNCE_CLOSE > 0:     
         yield env.timeout(time_before_close - ANNOUNCE_CLOSE)
-    cprint('The shop closing soon! Enter closed.', 'yellow')
+    cprint('\nAnnounce: The shop closing soon!\n', 'red')
+    sleep(2)
 
 def main(): 
-    cprint('Shop simulation starts:', 'green')
-    random.seed(42)
-
+    cprint('Shop simulation starts:\n', 'green')
+    random.seed()
+    
     # Setup process
     env = simpy.Environment()
     inside = env.process(simmulate(env))
-
+    sleep(1)
     # Execute
     env.run(until=SHOP_CLOSE_TIME)
-    print('Number of clients inside after shop close: %d. Shop worked %s above the normal' % 
-    (num_clients,format_time(additional_time)))
+    cprint('\nNumber of clients inside after shop close: %d. Shop worked %s above the normal' % 
+    (num_clients,format_time(additional_time)),'cyan')
     close_time = env.now + additional_time
     clients.append(0)
     timestat_c.append(close_time)
@@ -204,8 +216,10 @@ def main():
     timestat_q.append(close_time)
     all_queues.append(0)
     timestat_aq.append(close_time)
-    print('Shop closes at %s.' % format_time(env.now+additional_time))
-    cprint('Shop simulation stopped.', 'red')
+    sleep(0.5)
+    cprint('Shop closes at %s.' % format_time(env.now+additional_time), 'yellow')
+    sleep(0.5)    
+    cprint('\nShop simulation stopped.', 'red')
 
 
 if __name__ == "__main__":
@@ -244,4 +258,6 @@ title('Number of goods')
 xlabel(u'Simulation time, sec')
 ylabel(u'Current number of buys')
 if DRAW:
+    cprint('\nBuilding graphs...', 'blue')
+    sleep(2)
     show()
