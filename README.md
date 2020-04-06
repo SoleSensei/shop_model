@@ -35,7 +35,4 @@ all values positive of course.
 
 ## Libraries installation
 
-    python3 -mpip install -U pip
-    python3 -mpip install -U matplotlib
-    pip3 install simpy
-    pip3 install termcolor
+    python3 -m pip install -U matplotlib, simpy, termcolor
